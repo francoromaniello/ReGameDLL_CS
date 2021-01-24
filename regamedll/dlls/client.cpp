@@ -772,7 +772,8 @@ void Host_Say(edict_t *pEntity, BOOL teamonly)
 	{
 		if (CMD_ARGC_() >= 2)
 		{
-			p = (char *)CMD_ARGS();
+			Q_strlcpy(szTemp, CMD_ARGS());
+			p = szTemp;
 		}
 		else
 		{
@@ -784,12 +785,12 @@ void Host_Say(edict_t *pEntity, BOOL teamonly)
 	{
 		if (CMD_ARGC_() >= 2)
 		{
-			Q_sprintf(szTemp, "%s %s", (char *)pcmd, (char *)CMD_ARGS());
+			Q_sprintf(szTemp, "%s %s", pcmd, CMD_ARGS());
 		}
 		else
 		{
 			// Just a one word command, use the first word...sigh
-			Q_sprintf(szTemp, "%s", (char *)pcmd);
+			Q_sprintf(szTemp, "%s", pcmd);
 		}
 
 		p = szTemp;
@@ -806,8 +807,16 @@ void Host_Say(edict_t *pEntity, BOOL teamonly)
 		p[Q_strlen(p) - 1] = '\0';
 	}
 
+	// Check if buffer contains an invalid unicode sequence
+	// This can happen after truncation up to 127 chars into SV_ParseStringCommand
+	if (!Q_UnicodeValidate(p))
+	{
+		// Try fix invalid sequence in UTF-8
+		Q_UnicodeRepair(p);
+	}
+
 	// make sure the text has content
-	if (/*!p || */!p[0] || !Q_UnicodeValidate(p))
+	if (!p[0])
 	{
 		// no character found, so say nothing
 		return;
@@ -3628,7 +3637,7 @@ void EXT_FUNC ClientUserInfoChanged(edict_t *pEntity, char *infobuffer)
 		if (!pPlayer->SetClientUserInfoName(infobuffer, szName))
 		{
 			// so to back old name into buffer
-			SET_CLIENT_KEY_VALUE(pPlayer->entindex(), infobuffer, "name", (char *)STRING(pPlayer->pev->netname));
+			SET_CLIENT_KEY_VALUE(pPlayer->entindex(), infobuffer, "name", STRING(pPlayer->pev->netname));
 		}
 	}
 
@@ -3927,7 +3936,7 @@ void ClientPrecache()
 			if (!fname)
 				break;
 
-			PRECACHE_MODEL((char *)fname);
+			PRECACHE_MODEL(fname);
 		}
 	}
 

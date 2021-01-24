@@ -1203,8 +1203,10 @@ CGrenade *CGrenade::__API_HOOK(ShootSatchelCharge)(entvars_t *pevOwner, VectorRe
 	pGrenade->pev->velocity = g_vecZero;
 	pGrenade->pev->angles = vecAngles;
 
-	if (pevOwner != nullptr)
+	if (pevOwner)
 		pGrenade->pev->owner = ENT(pevOwner);
+	else
+		pGrenade->pev->owner = nullptr;
 
 	// Detonate in "time" seconds
 	pGrenade->SetThink(&CGrenade::C4Think);
@@ -1213,12 +1215,7 @@ CGrenade *CGrenade::__API_HOOK(ShootSatchelCharge)(entvars_t *pevOwner, VectorRe
 
 #ifdef REGAMEDLL_FIXES
 	TraceResult tr;
-
-	if(pevOwner != nullptr)
-		UTIL_TraceLine(vecStart,  vecStart + Vector(0, 0, -8192), ignore_monsters, ENT(pevOwner), &tr);
-	else
-		UTIL_TraceLine(vecStart, vecStart + Vector(0, 0, -8192), ignore_monsters, 0, &tr);
-
+	UTIL_TraceLine(vecStart,  vecStart + Vector(0, 0, -8192), ignore_monsters, pGrenade->pev->owner, &tr);
 	pGrenade->pev->oldorigin = (tr.flFraction == 1.0) ? vecStart : tr.vecEndPos;
 
 	pGrenade->pev->nextthink = gpGlobals->time + 0.01f;
@@ -1242,17 +1239,15 @@ CGrenade *CGrenade::__API_HOOK(ShootSatchelCharge)(entvars_t *pevOwner, VectorRe
 	pGrenade->pev->friction = 0.9f;
 	pGrenade->m_bJustBlew = false;
 
-	if (pevOwner != nullptr) {
-		CBasePlayer* pOwner = CBasePlayer::Instance(pevOwner);
+	edict_t *pEntCurBombTarget = nullptr;
+	if (pevOwner)
+	{
+		CBasePlayer *pOwner = CBasePlayer::Instance(pevOwner);
 		if (pOwner && pOwner->IsPlayer())
-		{
-			pGrenade->m_pentCurBombTarget = pOwner->m_pentCurBombTarget;
-		}
-		else
-		{
-			pGrenade->m_pentCurBombTarget = nullptr;
-		}
+			pEntCurBombTarget = pOwner->m_pentCurBombTarget;
 	}
+
+	pGrenade->m_pentCurBombTarget = pEntCurBombTarget;
 
 	return pGrenade;
 }
