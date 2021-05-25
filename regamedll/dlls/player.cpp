@@ -835,7 +835,7 @@ BOOL EXT_FUNC CBasePlayer::__API_HOOK(TakeDamage)(entvars_t *pevInflictor, entva
 		CBaseEntity *pAttacker = GET_PRIVATE<CBaseEntity>(ENT(pevAttacker));
 
 		// don't take damage if victim has protection
-		if (((pAttacker && pAttacker->IsPlayer()) || (bitsDamageType & DMG_FALL))  && CSPlayer()->GetProtectionState() == CCSPlayer::ProtectionSt_Active)
+		if (((pAttacker && pAttacker->IsPlayer()) || (bitsDamageType & DMG_FALL)) && CSPlayer()->GetProtectionState() == CCSPlayer::ProtectionSt_Active)
 			return FALSE;
 	}
 #endif
@@ -1034,7 +1034,7 @@ BOOL EXT_FUNC CBasePlayer::__API_HOOK(TakeDamage)(entvars_t *pevInflictor, entva
 		pAttack = GetClassPtr<CCSPlayer>((CBasePlayer *)pevAttacker);
 
 		// warn about team attacks
-		if (!CSGameRules()->IsFreeForAll() && pAttack->m_iTeam == m_iTeam)
+		if (g_pGameRules->PlayerRelationship(this, pAttack) == GR_TEAMMATE)
 		{
 			if (pAttack != this)
 			{
@@ -4664,8 +4664,9 @@ void EXT_FUNC CBasePlayer::__API_HOOK(PreThink)()
 
 #ifdef REGAMEDLL_ADD
 	auto protectStateCurrent = CSPlayer()->GetProtectionState();
-	if (protectStateCurrent  == CCSPlayer::ProtectionSt_Expired || (respawn_immunity_force_unset.value &&
-		(protectStateCurrent == CCSPlayer::ProtectionSt_Active && (m_afButtonPressed & IN_ACTIVE))))
+	if (protectStateCurrent  == CCSPlayer::ProtectionSt_Expired ||
+		(protectStateCurrent == CCSPlayer::ProtectionSt_Active &&
+		((respawn_immunity_force_unset.value == 1 && (m_afButtonPressed & IN_ACTIVE)) || (respawn_immunity_force_unset.value == 2 && (m_afButtonPressed & (IN_ATTACK | IN_ATTACK2))))))
 	{
 		RemoveSpawnProtection();
 	}
@@ -7745,7 +7746,7 @@ void CBasePlayer::UpdateStatusBar()
 			{
 				CBasePlayer *pTarget = (CBasePlayer *)pEntity;
 
-				bool sameTeam = !CSGameRules()->IsFreeForAll() && pTarget->m_iTeam == m_iTeam;
+				bool sameTeam = g_pGameRules->PlayerRelationship(this, pTarget) == GR_TEAMMATE;
 
 				newSBarState[SBAR_ID_TARGETNAME] = ENTINDEX(pTarget->edict());
 				newSBarState[SBAR_ID_TARGETTYPE] = sameTeam ? SBAR_TARGETTYPE_TEAMMATE : SBAR_TARGETTYPE_ENEMY;
@@ -9885,11 +9886,18 @@ void EXT_FUNC CBasePlayer::__API_HOOK(OnSpawnEquip)(bool addDefault, bool equipG
 {
 	if (equipGame)
 	{
-		CBaseEntity *pWeaponEntity = nullptr;
+		CGamePlayerEquip *pWeaponEntity = nullptr;
 		while ((pWeaponEntity = UTIL_FindEntityByClassname(pWeaponEntity, "game_player_equip")))
 		{
-			pWeaponEntity->Touch(this);
-			addDefault = false;
+
+#ifdef REGAMEDLL_FIXES
+			if (pWeaponEntity->CanEquipOverTouch(this))
+#endif
+			{
+				pWeaponEntity->Touch(this);
+
+				addDefault = false;
+			}
 		}
 	}
 
@@ -10079,13 +10087,21 @@ void EXT_FUNC CBasePlayer::__API_HOOK(SetSpawnProtection)(float flProtectionTime
 {
 #ifdef REGAMEDLL_ADD
 	if (respawn_immunity_effects.value > 0)
-#endif
 	{
 		pev->rendermode = kRenderTransAdd;
 		pev->renderamt  = 100.0f;
+
+		MESSAGE_BEGIN(MSG_ONE_UNRELIABLE, gmsgStatusIcon, nullptr, pev);
+			WRITE_BYTE(STATUSICON_FLASH);
+			WRITE_STRING("suithelmet_full");
+			WRITE_BYTE(0);
+			WRITE_BYTE(160);
+			WRITE_BYTE(0);
+		MESSAGE_END();
 	}
 
 	CSPlayer()->m_flSpawnProtectionEndTime = gpGlobals->time + flProtectionTime;
+#endif
 }
 
 LINK_HOOK_CLASS_VOID_CHAIN2(CBasePlayer, RemoveSpawnProtection)
@@ -10094,7 +10110,6 @@ void CBasePlayer::__API_HOOK(RemoveSpawnProtection)()
 {
 #ifdef REGAMEDLL_ADD
 	if (respawn_immunity_effects.value > 0)
-#endif
 	{
 		if (pev->rendermode == kRenderTransAdd &&
 			pev->renderamt == 100.0f)
@@ -10102,9 +10117,15 @@ void CBasePlayer::__API_HOOK(RemoveSpawnProtection)()
 			pev->renderamt  = 255.0f;
 			pev->rendermode = kRenderNormal;
 		}
+
+		MESSAGE_BEGIN(MSG_ONE, gmsgStatusIcon, nullptr, pev);
+			WRITE_BYTE(STATUSICON_HIDE);
+			WRITE_STRING("suithelmet_full");
+		MESSAGE_END();
 	}
 
 	CSPlayer()->m_flSpawnProtectionEndTime = 0.0f;
+#endif
 }
 
 LINK_HOOK_CLASS_VOID_CHAIN(CBasePlayer, DropIdlePlayer, (const char *reason), reason)

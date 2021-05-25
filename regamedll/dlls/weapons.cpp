@@ -747,6 +747,12 @@ void CBasePlayerWeapon::FireRemaining(int &shotsFired, float &shootTime, BOOL bI
 		vecDir = m_pPlayer->FireBullets3(vecSrc, gpGlobals->v_forward, m_fBurstSpread, 8192, 2, BULLET_PLAYER_556MM, 30, 0.96, m_pPlayer->pev, false, m_pPlayer->random_seed);
 		--m_pPlayer->ammo_556nato;
 
+#ifdef REGAMEDLL_ADD
+		// HACKHACK: client-side weapon prediction fix
+		if (!(iFlags() & ITEM_FLAG_NOFIREUNDERWATER) && m_pPlayer->pev->waterlevel == 3)
+			flag = 0;
+#endif
+
 		PLAYBACK_EVENT_FULL(flag, m_pPlayer->edict(), m_usFireFamas, 0, (float *)&g_vecZero, (float *)&g_vecZero, vecDir.x, vecDir.y,
 			int(m_pPlayer->pev->punchangle.x * 10000000), int(m_pPlayer->pev->punchangle.y * 10000000), FALSE, FALSE);
 	}
@@ -834,8 +840,9 @@ void CBasePlayerWeapon::HandleInfiniteAmmo()
 	{
 		m_iClip = iMaxClip();
 	}
-	else if ((nInfiniteAmmo == WPNMODE_INFINITE_BPAMMO &&
+	else if ((nInfiniteAmmo == WPNMODE_INFINITE_BPAMMO
 #ifdef REGAMEDLL_API
+		&&
 		((m_pPlayer->CSPlayer()->m_iWeaponInfiniteIds & (1 << m_iId)) || (m_pPlayer->CSPlayer()->m_iWeaponInfiniteIds <= 0 && !IsGrenadeWeapon(m_iId)))
 #endif
 		)
@@ -962,7 +969,16 @@ void CBasePlayerWeapon::ItemPostFrame()
 #endif
 			(m_pPlayer->m_bCanShoot && g_pGameRules->IsMultiplayer() && !g_pGameRules->IsFreezePeriod() && !m_pPlayer->m_bIsDefusing) || !g_pGameRules->IsMultiplayer())
 		{
-			PrimaryAttack();
+			// don't fire underwater
+			if (m_pPlayer->pev->waterlevel == 3 && (iFlags() & ITEM_FLAG_NOFIREUNDERWATER))
+			{
+				PlayEmptySound();
+				m_flNextPrimaryAttack = GetNextAttackDelay(0.15);
+			}
+			else
+			{
+				PrimaryAttack();
+			}
 		}
 	}
 	else if ((m_pPlayer->pev->button & IN_RELOAD) && iMaxClip() != WEAPON_NOCLIP && !m_fInReload && m_flNextPrimaryAttack < UTIL_WeaponTimeBase())
@@ -1136,6 +1152,7 @@ void CBasePlayerItem::AttachToPlayer(CBasePlayer *pPlayer)
 
 void CBasePlayerWeapon::Spawn()
 {
+#ifdef REGAMEDLL_API
 	ItemInfo info;
 	Q_memset(&info, 0, sizeof(info));
 
@@ -1144,6 +1161,7 @@ void CBasePlayerWeapon::Spawn()
 	}
 
 	CSPlayerWeapon()->m_bHasSecondaryAttack = HasSecondaryAttack();
+#endif
 }
 
 // CALLED THROUGH the newly-touched weapon's instance. The existing player weapon is pOriginal

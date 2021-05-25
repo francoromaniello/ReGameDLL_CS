@@ -3004,7 +3004,7 @@ void CHalfLifeMultiplay::CheckRoundTimeExpired()
 		if (!OnRoundEnd_Intercept(WINSTATUS_CTS, ROUND_TARGET_SAVED, GetRoundRestartDelay()))
 			return;
 	}
-	else if (!(scenarioFlags & SCENARIO_BLOCK_HOSTAGE_RESCUE) && UTIL_FindEntityByClassname(nullptr, "hostage_entity"))
+	else if (!(scenarioFlags & SCENARIO_BLOCK_HOSTAGE_RESCUE_TIME) && UTIL_FindEntityByClassname(nullptr, "hostage_entity"))
 	{
 		if (!OnRoundEnd_Intercept(WINSTATUS_TERRORISTS, ROUND_HOSTAGE_NOT_RESCUED, GetRoundRestartDelay()))
 			return;
@@ -3022,9 +3022,31 @@ void CHalfLifeMultiplay::CheckRoundTimeExpired()
 #ifdef REGAMEDLL_ADD
 	else if (roundover.value)
 	{
-		// round is over
-		if (!OnRoundEnd_Intercept(WINSTATUS_DRAW, ROUND_GAME_OVER, GetRoundRestartDelay()))
-			return;
+		switch ((int)roundover.value)
+		{
+		case 1:
+		default:
+		{
+			if (!OnRoundEnd_Intercept(WINSTATUS_DRAW, ROUND_GAME_OVER, GetRoundRestartDelay()))
+				return;
+
+			break;
+		}
+		case 2:
+		{
+			if (!OnRoundEnd_Intercept(WINSTATUS_TERRORISTS, ROUND_TERRORISTS_WIN, GetRoundRestartDelay()))
+				return;
+
+			break;
+		}
+		case 3:
+		{
+			if (!OnRoundEnd_Intercept(WINSTATUS_CTS, ROUND_CTS_WIN, GetRoundRestartDelay()))
+				return;
+
+			break;
+		}
+		}
 	}
 #endif
 
@@ -3237,6 +3259,17 @@ BOOL EXT_FUNC CHalfLifeMultiplay::__API_HOOK(FShouldSwitchWeapon)(CBasePlayer *p
 		return FALSE;
 	}
 
+#ifdef REGAMEDLL_FIXES
+	if (pPlayer->pev->waterlevel == 3)
+	{
+		if (pWeapon->iFlags() & ITEM_FLAG_NOFIREUNDERWATER)
+			return FALSE;
+		
+		if (pPlayer->m_pActiveItem->iFlags() & ITEM_FLAG_NOFIREUNDERWATER)
+			return TRUE;
+	}
+#endif
+
 	if (pWeapon->iWeight() > pPlayer->m_pActiveItem->iWeight())
 		return TRUE;
 
@@ -3251,6 +3284,7 @@ BOOL EXT_FUNC CHalfLifeMultiplay::__API_HOOK(GetNextBestWeapon)(CBasePlayer *pPl
 	CBasePlayerItem *pBest; // this will be used in the event that we don't find a weapon in the same category.
 	int iBestWeight;
 	int i;
+	bool inWater = pPlayer->pev->waterlevel == 3;
 
 	if (!pCurrentWeapon->CanHolster())
 	{
@@ -3268,7 +3302,11 @@ BOOL EXT_FUNC CHalfLifeMultiplay::__API_HOOK(GetNextBestWeapon)(CBasePlayer *pPl
 		while (pCheck)
 		{
 			// don't reselect the weapon we're trying to get rid of
-			if (pCheck->iWeight() > iBestWeight && pCheck != pCurrentWeapon)
+			if (pCheck->iWeight() > iBestWeight && pCheck != pCurrentWeapon
+#ifdef REGAMEDLL_FIXES
+				&& !(inWater && (pCheck->iFlags() & ITEM_FLAG_NOFIREUNDERWATER))
+#endif
+				)
 			{
 				//ALERT (at_console, "Considering %s\n", STRING(pCheck->pev->classname));
 				// we keep updating the 'best' weapon just in case we can't find a weapon of the same weight
@@ -3671,7 +3709,11 @@ void CHalfLifeMultiplay::PlayerThink(CBasePlayer *pPlayer)
 	if (pPlayer->m_pActiveItem && pPlayer->m_pActiveItem->IsWeapon())
 	{
 		CBasePlayerWeapon *pWeapon = static_cast<CBasePlayerWeapon *>(pPlayer->m_pActiveItem->GetWeaponPtr());
-		if (pWeapon->m_iWeaponState & WPNSTATE_SHIELD_DRAWN)
+		if (pWeapon->m_iWeaponState & WPNSTATE_SHIELD_DRAWN
+#ifdef REGAMEDLL_ADD
+			|| ((pWeapon->iFlags() & ITEM_FLAG_NOFIREUNDERWATER) && pPlayer->pev->waterlevel == 3)
+#endif
+			)
 		{
 			pPlayer->m_bCanShoot = false;
 		}
@@ -3893,9 +3935,8 @@ void EXT_FUNC CHalfLifeMultiplay::__API_HOOK(PlayerKilled)(CBasePlayer *pVictim,
 	{
 		// if a player dies in a deathmatch game and the killer is a client, award the killer some points
 		CBasePlayer *killer = GetClassPtr<CCSPlayer>((CBasePlayer *)pKiller);
-		bool killedByFFA = IsFreeForAll();
 
-		if (killer->m_iTeam == pVictim->m_iTeam && !killedByFFA)
+		if (g_pGameRules->PlayerRelationship(pVictim, killer) == GR_TEAMMATE)
 		{
 			// if a player dies by from teammate
 			pKiller->frags -= IPointsForKill(peKiller, pVictim);
